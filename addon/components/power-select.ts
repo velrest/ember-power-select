@@ -121,6 +121,7 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
   @tracked searchText = ''
   @tracked lastSearchedText = ''
   @tracked highlighted?: any
+  @tracked selected?: any[]
   storedAPI!: Select
   private _lastOptionsPromise?: PromiseProxy<any[]>
   private _lastSelectedPromise?: PromiseProxy<any>
@@ -137,7 +138,7 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
     if (this._lastSelectedPromise && isPromiseProxyLike(this._lastSelectedPromise)) {
       try {
         removeObserver(this._lastSelectedPromise, 'content', this, this._selectedObserverCallback);
-      } catch {}
+      } catch { }
       this._lastSelectedPromise = undefined;
     }
     super.willDestroy.apply(this, arguments);
@@ -205,15 +206,6 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
 
   get resultsCount(): number {
     return countOptions(this.results);
-  }
-
-  get selected(): any {
-    if (this._resolvedSelected) {
-      return toPlainArray(this._resolvedSelected);
-    } else if (this.args.selected && typeof this.args.selected.then !== 'function') {
-      return toPlainArray(this.args.selected);
-    }
-    return undefined;
   }
 
   // Actions
@@ -351,22 +343,21 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
       }
 
       let currentSelectedPromise: PromiseProxy<any> = this.args.selected;
-      currentSelectedPromise.then(() => {
+      currentSelectedPromise.then((resolvedSelected) => {
         if (this.isDestroyed || this.isDestroying) return;
         if (isPromiseProxyLike(currentSelectedPromise)) {
-          addObserver(currentSelectedPromise, 'content', this, this._selectedObserverCallback);
+          addObserver(currentSelectedPromise, 'content', this, () => this._selectedObserverCallback(resolvedSelected));
+        }
+
+        if (this._lastSelectedPromise === currentSelectedPromise) {
+          this.selected = toPlainArray(resolvedSelected);
+          this._highlight(resolvedSelected)
         }
       });
 
       this._lastSelectedPromise = currentSelectedPromise;
-      this._lastSelectedPromise.then(resolvedSelected => {
-        if (this._lastSelectedPromise === currentSelectedPromise) {
-          this._resolvedSelected = resolvedSelected;
-          this._highlight(resolvedSelected)
-        }
-      });
     } else {
-      this._resolvedSelected = undefined;
+      this.selected = toPlainArray(this.args.selected);
       // Don't highlight args.selected array on multi-select
       if (!Array.isArray(this.args.selected)) {
         this._highlight(this.args.selected);
@@ -374,9 +365,9 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
     }
   }
 
-  _selectedObserverCallback(): void {
-    this._resolvedSelected = this._lastSelectedPromise;
-    this._highlight(this._resolvedSelected)
+  _selectedObserverCallback(selected): void {
+    this.selected = toPlainArray(selected);
+    this._highlight(this.selected)
   }
 
   @action
@@ -542,7 +533,7 @@ export default class PowerSelect extends Component<PowerSelectArgs> {
     let highlighted;
     let defHighlighted = this.args.defaultHighlighted || defaultHighlighted;
     if (typeof defHighlighted === 'function') {
-      highlighted = defHighlighted({ results: this.results, highlighted: this.highlighted, selected: this.selected});
+      highlighted = defHighlighted({ results: this.results, highlighted: this.highlighted, selected: this.selected });
     } else {
       highlighted = defHighlighted
     }
